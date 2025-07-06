@@ -30,34 +30,39 @@ jobs:
       run: |
         curl -L -o zoning.geojson \
           "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&outSR=3857&f=geojson"
+# … earlier steps unchanged (checkout, install gdal, fetch GeoJSON) …
 
-    # 4 ▸ Re-project to Web Mercator (EPSG 3857) GeoPackage
+    # 4 ▸ Re-project to Web Mercator GeoJSON (Tippecanoe wants EPSG:3857)
     - name: Reproject to Web Mercator
       run: |
-        ogr2ogr -t_srs EPSG:3857 zoning3857.gpkg zoning.geojson
+        ogr2ogr -t_srs EPSG:3857 zoning3857.geojson zoning.geojson
 
-    # 5 ▸ Rasterise to GeoTIFF  (2 m pixels, Surrey bbox)
-    - name: Rasterize to GeoTIFF
+    # 5 ▸ Build a single PMTiles vector file (zoom 10-18)
+    - name: Generate PMTiles (vector)
       run: |
-        gdal_rasterize \
-          -burn 1 \
-          -tr 2 2 \
-          -te -13651500 6230000 -13580000 6290000 \
-          -ot Byte -of GTiff \
-          zoning3857.gpkg zoning.tif
+        sudo apt-get install -y tippecanoe
+        tippecanoe -o zoning.pmtiles \
+          -Z10 -z18 \
+          --layer=zone \
+          --drop-densest-as-needed \
+          --no-feature-limit --no-tile-size-limit \
+          zoning3857.geojson
 
-    # 6 ▸ Generate XYZ PNG tiles (zoom 10–18)
-    - name: Generate XYZ tiles
+    # 6 ▸ Commit & push the PMTiles if it changed
+    - name: Commit & push tiles
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        rm -rf tiles && mkdir -p tiles
-        gdal2tiles.py -z 10-18 -w none -r bilinear \
-          --processes=4 zoning.tif tiles/
-
-    # 7 ▸ Optional: list a few tiles for sanity
-    - name: List a few generated tiles
-      run: |
-        ls tiles/12 | head -5 || true
-
+        git config user.name  "Tile Bot"
+        git config user.email "bot@users.noreply.github.com"
+        git add zoning.pmtiles || true
+        if ! git diff --cached --quiet; then
+          git commit -m "Nightly PMTiles update $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          git push origin HEAD:main
+        else
+          echo "No tile changes to commit."
+        fi
+        
     # 8 ▸ Commit & push if tiles changed
     - name: Commit & push tiles
       env:
