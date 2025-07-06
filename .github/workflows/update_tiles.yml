@@ -27,31 +27,25 @@ jobs:
         curl -L -o zoning.geojson \
         "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&outSR=3857&f=geojson"
 
-    # 4. Reproject to EPSG:3857 if needed (ArcGIS already gave 3857 here, but keep for safety)
-    - name: Reproject (noop if already 3857)
+    # 4. Reproject to EPSG:3857 GeoPackage (vector)
+    - name: Reproject to Web Mercator
       run: |
-        ogrinfo zoning.geojson | grep -q "3857" || \
-        ogr2ogr -t_srs EPSG:3857 zoning3857.geojson zoning.geojson
+        ogr2ogr -t_srs EPSG:3857 zoning3857.gpkg zoning.geojson
 
-    # 5. Rasterise to XYZ PNG tiles (zoom 10-18)
+    # 5. Rasterise to GeoTIFF (pixel size ~2 m, 1 band; burn 1)
+    - name: Rasterize to GeoTIFF
+      run: |
+        gdal_rasterize \
+          -burn 1 \
+          -tr 2 2 \               # 2-metre pixels; adjust for detail vs. size
+          -te -13651500 6230000 -13580000 6290000 \  # Surrey bbox in EPSG:3857
+          -ot Byte \
+          -of GTiff \
+          zoning3857.gpkg zoning.tif
+
+    # 6. Generate XYZ PNG tiles (zoom 10-18)
     - name: Generate XYZ tiles
       run: |
         mkdir -p tiles
-        gdal2tiles.py -z 10-18 -r bilinear -w none \
-          --processes=4 zoning.geojson tiles/
-
-    # 6. Commit & push only if tiles changed
-    - name: Commit changes
-      run: |
-        git config user.name  "Tile Bot"
-        git config user.email "bot@users.noreply.github.com"
-        if [[ `git status --porcelain tiles | wc -l` -gt 0 ]]; then
-          git add tiles
-          git commit -m "Nightly tile update $(date -u +'%Y-%m-%d')"
-          git push
-        else
-          echo "No tile diff – skip commit."
-        fi
-      env:
-        # Use repo's default GITHUB_TOKEN
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        gdal2tiles.py -z 10-18 -w none -r bilinear \
+          --processes=4 zoning.tif tiles/
