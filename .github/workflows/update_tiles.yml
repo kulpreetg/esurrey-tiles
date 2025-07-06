@@ -1,0 +1,57 @@
+name: Nightly zoning tile refresh
+on:
+  schedule:    # 02:07 Vancouver time daily
+    - cron: "7 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  bake-tiles:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Checkout repo that holds /tiles
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false   # we'll push via token
+
+    # 2. Install GDAL + mbutil
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gdal-bin python3-pip
+        pip install mbutil
+
+    # 3. Download latest zoning GeoJSON
+    - name: Fetch zoning polygons
+      run: |
+        curl -L -o zoning.geojson \
+        "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&outSR=3857&f=geojson"
+
+    # 4. Reproject to EPSG:3857 if needed (ArcGIS already gave 3857 here, but keep for safety)
+    - name: Reproject (noop if already 3857)
+      run: |
+        ogrinfo zoning.geojson | grep -q "3857" || \
+        ogr2ogr -t_srs EPSG:3857 zoning3857.geojson zoning.geojson
+
+    # 5. Rasterise to XYZ PNG tiles (zoom 10-18)
+    - name: Generate XYZ tiles
+      run: |
+        mkdir -p tiles
+        gdal2tiles.py -z 10-18 -r bilinear -w none \
+          --processes=4 zoning.geojson tiles/
+
+    # 6. Commit & push only if tiles changed
+    - name: Commit changes
+      run: |
+        git config user.name  "Tile Bot"
+        git config user.email "bot@users.noreply.github.com"
+        if [[ `git status --porcelain tiles | wc -l` -gt 0 ]]; then
+          git add tiles
+          git commit -m "Nightly tile update $(date -u +'%Y-%m-%d')"
+          git push
+        else
+          echo "No tile diff – skip commit."
+        fi
+      env:
+        # Use repo's default GITHUB_TOKEN
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
