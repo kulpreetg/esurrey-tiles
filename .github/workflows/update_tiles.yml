@@ -16,7 +16,7 @@ jobs:
     # 1 ▸ Checkout repo (tiles repo)
     - uses: actions/checkout@v4
       with:
-        persist-credentials: false   # we’ll push explicitly later
+        #persist-credentials: false   # we’ll push explicitly later
 
     # 2 ▸ Install GDAL + mbutil
     - name: Install dependencies
