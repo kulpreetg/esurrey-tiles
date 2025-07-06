@@ -35,12 +35,9 @@ jobs:
     # 5. Rasterise to GeoTIFF (pixel size ~2 m, 1 band; burn 1)
     - name: Rasterize to GeoTIFF
       run: |
-        gdal_rasterize \
-          -burn 1 \
-          -tr 2 2 \               # 2-metre pixels; adjust for detail vs. size
-          -te -13651500 6230000 -13580000 6290000 \  # Surrey bbox in EPSG:3857
-          -ot Byte \
-          -of GTiff \
+        gdal_rasterize -burn 1 -tr 2 2 \
+          -te -13651500 6230000 -13580000 6290000 \
+          -ot Byte -of GTiff \
           zoning3857.gpkg zoning.tif
 
     # 6. Generate XYZ PNG tiles (zoom 10-18)
