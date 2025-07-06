@@ -1,52 +1,76 @@
 name: Nightly zoning tile refresh
+
 on:
-  schedule:    # 02:07 Vancouver time daily
+  # Runs daily at 02:07 PT  (09:07 UTC all year; cron uses UTC)
+  schedule:
     - cron: "7 9 * * *"
   workflow_dispatch:
 
 jobs:
   bake-tiles:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write          # <- allow git push with GITHUB_TOKEN
 
     steps:
-    # 1. Checkout repo that holds /tiles
+    # 1 ▸ Checkout repo (tiles repo)
     - uses: actions/checkout@v4
       with:
-        persist-credentials: false   # we'll push via token
+        persist-credentials: false   # we’ll push explicitly later
 
-    # 2. Install GDAL + mbutil
+    # 2 ▸ Install GDAL + mbutil
     - name: Install dependencies
       run: |
-        sudo apt-get update
+        sudo apt-get update -y
         sudo apt-get install -y gdal-bin python3-pip
-        pip install mbutil
+        pip install --quiet mbutil
 
-    # 3. Download latest zoning GeoJSON
+    # 3 ▸ Download latest zoning polygons (vector GeoJSON)
     - name: Fetch zoning polygons
       run: |
         curl -L -o zoning.geojson \
-        "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&outSR=3857&f=geojson"
+          "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&outSR=3857&f=geojson"
 
-    # 4. Reproject to EPSG:3857 GeoPackage (vector)
+    # 4 ▸ Re-project to Web Mercator (EPSG 3857) GeoPackage
     - name: Reproject to Web Mercator
       run: |
         ogr2ogr -t_srs EPSG:3857 zoning3857.gpkg zoning.geojson
 
-    # 5. Rasterise to GeoTIFF (pixel size ~2 m, 1 band; burn 1)
+    # 5 ▸ Rasterise to GeoTIFF  (2 m pixels, Surrey bbox)
     - name: Rasterize to GeoTIFF
       run: |
         gdal_rasterize \
           -burn 1 \
           -tr 2 2 \
           -te -13651500 6230000 -13580000 6290000 \
-          -ot Byte \
-          -of GTiff \
-          zoning3857.gpkg \
-          zoning.tif
+          -ot Byte -of GTiff \
+          zoning3857.gpkg zoning.tif
 
-    # 6. Generate XYZ PNG tiles (zoom 10-18)
+    # 6 ▸ Generate XYZ PNG tiles (zoom 10–18)
     - name: Generate XYZ tiles
       run: |
-        mkdir -p tiles
+        rm -rf tiles && mkdir -p tiles
         gdal2tiles.py -z 10-18 -w none -r bilinear \
           --processes=4 zoning.tif tiles/
+
+    # 7 ▸ Optional: list a few tiles for sanity
+    - name: List a few generated tiles
+      run: |
+        ls tiles/12 | head -5 || true
+
+    # 8 ▸ Commit & push if tiles changed
+    - name: Commit & push tiles
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        git config user.name  "Tile Bot"
+        git config user.email "bot@users.noreply.github.com"
+        git add tiles || true
+
+        # Only commit when there are staged changes
+        if ! git diff --cached --quiet; then
+          git commit -m "Nightly tile update $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          git push origin HEAD:main
+        else
+          echo "No tile changes to commit."
+        fi
