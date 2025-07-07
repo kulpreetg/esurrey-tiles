@@ -1,54 +1,44 @@
 name: Nightly zoning tile refresh
 
 on:
-  # 09:07 UTC  ▸ 02:07 PT every day
   schedule:
-    - cron: '7 9 * * *'
+    - cron: '7 9 * * *'             # 02:07 PT
   workflow_dispatch:
 
 jobs:
   bake-tiles:
     runs-on: ubuntu-latest
     permissions:
-      contents: write          # allow git push via GITHUB_TOKEN
+      contents: write
 
     steps:
-    # 1 ▸ Checkout this repo
     - uses: actions/checkout@v4
 
-    # 2 ▸ GDAL + Tippecanoe + Node (for npx pmtiles)
-    - name: Install tooling
+    - name: Install GDAL • Tippecanoe • Node
       run: |
         sudo apt-get update -y
         sudo apt-get install -y gdal-bin tippecanoe nodejs npm
 
-    # 3 ▸ Download latest Surrey zoning polygons
-    - name: Download zoning GeoJSON
+    # 1 ▸ Fetch zoning polygons in WGS-84 (EPSG 4326)
+    - name: Download zoning GeoJSON (4326)
       run: |
-        curl -sSL -o zoning.geojson \
-          "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&outSR=3857&f=geojson"
+        curl -sSL -o zoning4326.geojson \
+          "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&f=geojson"
 
-    # 4 ▸ Re-project (harmless if already 3857)
-    - name: Reproject to EPSG:3857
-      run: |
-        ogr2ogr -t_srs EPSG:3857 zoning3857.geojson zoning.geojson
-
-    # 5 ▸ Build PMTiles — **single long line** so -o is always seen
+    # 2 ▸ Build PMTiles – ONE long line so -o is always read
     - name: Build PMTiles
       run: |
         rm -f zoning.pmtiles
         tippecanoe -Z10 -z18 --force \
-          --named-layer=zone:zoning3857.geojson \
+          --named-layer=zone:zoning4326.geojson \
           --drop-densest-as-needed \
-          -o zoning.pmtiles zoning3857.geojson
+          -o zoning.pmtiles zoning4326.geojson
 
-    # 6 ▸ Optional sanity check (don’t fail workflow if it errors)
-    - name: Inspect PMTiles header
-      run: |
-        npx -y pmtiles info zoning.pmtiles || true
+    # (optional) PMTiles header dump – never fail job
+    - name: Inspect header
+      run: npx -y pmtiles info zoning.pmtiles || true
 
-
-    # 7 ▸ Commit & push if file changed
+    # 3 ▸ Commit + push only if the file changed
     - name: Commit & push
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -56,7 +46,6 @@ jobs:
         git config user.name  "Tile Bot"
         git config user.email "bot@users.noreply.github.com"
         git add zoning.pmtiles
-
         if ! git diff --cached --quiet; then
           git commit -m "Nightly zoning tiles $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           git push origin HEAD:main
