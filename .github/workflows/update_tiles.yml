@@ -1,57 +1,54 @@
 name: Nightly zoning tile refresh
 
 on:
-  # 09:07 UTC = 02:07 PT every day
+  # 09:07 UTC  ▸ 02:07 PT every day
   schedule:
-    - cron: "7 9 * * *"
+    - cron: '7 9 * * *'
   workflow_dispatch:
 
 jobs:
   bake-tiles:
     runs-on: ubuntu-latest
     permissions:
-      contents: write        # allow git push with GITHUB_TOKEN
+      contents: write          # allow git push via GITHUB_TOKEN
 
     steps:
     # 1 ▸ Checkout this repo
     - uses: actions/checkout@v4
 
-    # 2 ▸ Core deps: GDAL for reprojection, Tippecanoe for PMTiles, Node for npx
-    - name: Install GDAL + Tippecanoe
+    # 2 ▸ GDAL + Tippecanoe + Node (for npx pmtiles)
+    - name: Install tooling
       run: |
         sudo apt-get update -y
         sudo apt-get install -y gdal-bin tippecanoe nodejs npm
 
-    # 3 ▸ Fetch latest Surrey zoning polygons (GeoJSON, EPSG:3857)
+    # 3 ▸ Download latest Surrey zoning polygons
     - name: Download zoning GeoJSON
       run: |
-        curl -L -o zoning.geojson \
+        curl -sSL -o zoning.geojson \
           "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&outSR=3857&f=geojson"
 
-    # 4 ▸ Re-project to 3857 anyway (noop if already 3857)
+    # 4 ▸ Re-project (harmless if already 3857)
     - name: Reproject to EPSG:3857
       run: |
         ogr2ogr -t_srs EPSG:3857 zoning3857.geojson zoning.geojson
 
-    # 5 ▸ Bake PMTiles (vector) — layer name “zone”
+    # 5 ▸ Build PMTiles — **single long line** so -o is always seen
     - name: Build PMTiles
       run: |
         rm -f zoning.pmtiles
-        tippecanoe \
-          -Z10 -z18 \                   
-          --force \                     
+        tippecanoe -Z10 -z18 --force \
           --named-layer=zone:zoning3857.geojson \
           --drop-densest-as-needed \
-          -o zoning.pmtiles \
-          zoning3857.geojson
+          -o zoning.pmtiles zoning3857.geojson
 
-    # 6 ▸ Optional: show header in CI log
+    # 6 ▸ Optional sanity check
     - name: Inspect PMTiles header
       run: |
         npx -y @protomaps/pmtiles info zoning.pmtiles
 
-    # 7 ▸ Commit & push if the archive changed
-    - name: Commit & push zoning.pmtiles
+    # 7 ▸ Commit & push if file changed
+    - name: Commit & push
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
