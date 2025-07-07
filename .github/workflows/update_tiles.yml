@@ -1,7 +1,7 @@
 name: Nightly zoning tile refresh
 
 on:
-  # Runs daily at 02:07 PT  (09:07 UTC all year; cron uses UTC)
+  # 09:07 UTC = 02:07 PT every day
   schedule:
     - cron: "7 9 * * *"
   workflow_dispatch:
@@ -10,39 +10,30 @@ jobs:
   bake-tiles:
     runs-on: ubuntu-latest
     permissions:
-      contents: write          # <- allow git push with GITHUB_TOKEN
+      contents: write        # allow git push with GITHUB_TOKEN
 
     steps:
-    # 1 ▸ Checkout repo (tiles repo)
+    # 1 ▸ Checkout this repo
     - uses: actions/checkout@v4
-#      with:
-#        persist-credentials: false   # we’ll push explicitly later
 
-    # 2 ▸ Install GDAL + mbutil
-    - name: Install dependencies
+    # 2 ▸ Core deps: GDAL for reprojection, Tippecanoe for PMTiles, Node for npx
+    - name: Install GDAL + Tippecanoe
       run: |
         sudo apt-get update -y
-        sudo apt-get install -y gdal-bin python3-pip
-        pip install --quiet mbutil
+        sudo apt-get install -y gdal-bin tippecanoe nodejs npm
 
-    # 3 ▸ Download latest zoning polygons (vector GeoJSON)
-    - name: Fetch zoning polygons
+    # 3 ▸ Fetch latest Surrey zoning polygons (GeoJSON, EPSG:3857)
+    - name: Download zoning GeoJSON
       run: |
         curl -L -o zoning.geojson \
           "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&outSR=3857&f=geojson"
-# … earlier steps unchanged (checkout, install gdal, fetch GeoJSON) …
-    # 4 ▸ Reproject to Web-Mercator
-    - name: Reproject zoning polygons
+
+    # 4 ▸ Re-project to 3857 anyway (noop if already 3857)
+    - name: Reproject to EPSG:3857
       run: |
         ogr2ogr -t_srs EPSG:3857 zoning3857.geojson zoning.geojson
-    
-    # 5 ▸ Install Tippecanoe (static binary)
-    - name: Install Tippecanoe
-      run: |
-        curl -L https://github.com/mapbox/tippecanoe/releases/download/2.0.2/tippecanoe-2.0.2-linux-x86_64.zip \
-          -o t.zip && unzip -j t.zip tippecanoe && chmod +x tippecanoe && sudo mv tippecanoe /usr/local/bin/
-    
-    # 6 ▸ Bake PMTiles vector archive
+
+    # 5 ▸ Bake PMTiles (vector) — layer name “zone”
     - name: Build PMTiles
       run: |
         tippecanoe -zg \
@@ -50,25 +41,24 @@ jobs:
           --drop-densest-as-needed \
           -o zoning.pmtiles \
           zoning3857.geojson
-          
-    # 8 ▸ Commit & push if tiles changed
-    - name: Commit & push tiles
+
+    # 6 ▸ Optional: show header in CI log
+    - name: Inspect PMTiles header
+      run: |
+        npx -y @protomaps/pmtiles info zoning.pmtiles
+
+    # 7 ▸ Commit & push if the archive changed
+    - name: Commit & push zoning.pmtiles
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config user.name  "Tile Bot"
         git config user.email "bot@users.noreply.github.com"
-        git add tiles || true
+        git add zoning.pmtiles
 
-        # Only commit when there are staged changes
         if ! git diff --cached --quiet; then
-          git commit -m "Nightly tile update $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          git commit -m "Nightly zoning tiles $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           git push origin HEAD:main
         else
-          echo "No tile changes to commit."
+          echo "No changes in zoning.pmtiles"
         fi
-        
-    - name: Inspect current PMTiles
-      run: |
-        npx pmtiles info zoning.pmtiles || true
-
