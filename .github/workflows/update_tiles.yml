@@ -36,13 +36,14 @@ jobs:
     # 5 ▸ Bake PMTiles (vector) — layer name “zone”
     - name: Build PMTiles
       run: |
-        rm -f zoning.pmtiles              # delete old file if present
-        tippecanoe -zg \
+        rm -f zoning.pmtiles                # delete old file if present
+        tippecanoe \
+          -Z 10 -z 18 \                     # ← give min ⬆ max zooms instead of -zg
+          --force \                         # overwrite if exists
           --named-layer="zone:zoning3857.geojson" \
           --drop-densest-as-needed \
           -o zoning.pmtiles \
           zoning3857.geojson
-
 
     # 6 ▸ Optional: show header in CI log
     - name: Inspect PMTiles header
