@@ -25,20 +25,25 @@ jobs:
         curl -sSL -o zoning4326.geojson \
           "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&outSR=4326&f=geojson"
 
-    # 2 ▸ Build PMTiles – ONE long line so -o is always read
+    # 2 ▸ Build PMTiles
     - name: Build PMTiles
       run: |
         rm -f zoning.pmtiles
         tippecanoe -Z10 -z18 --force \
-          --named-layer=zone:zoning4326.geojson \
+          -l zone \                       # layer is now called “zone”
           --drop-densest-as-needed \
           -o zoning.pmtiles zoning4326.geojson
 
-    # (optional) PMTiles header dump – never fail job
-    - name: Inspect header
-      run: npx -y pmtiles info zoning.pmtiles || true
+    # 2·a ▸ (optional) Inspect the archive we just created
+    - name: Inspect PMTiles header
+      run: |
+        curl -sL \
+          https://github.com/protomaps/pmtiles/releases/latest/download/pmtiles-linux \
+          -o pmtiles && chmod +x pmtiles
+        ./pmtiles info zoning.pmtiles | head      # prints layer list & bounds
+        # the first 10 lines are enough for a quick sanity-check
 
-    # 3 ▸ Commit + push only if the file changed
+    # 3 ▸ Commit & push only if the file changed
     - name: Commit & push
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
