@@ -26,13 +26,12 @@ jobs:
           "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&outSR=4326&f=geojson"
 
     # 2 ▸ Build PMTiles
-    # .github/workflows/update_tiles.yml  (only the build step shown)
+    # .github/workflows/update_tiles.yml  ─ only the build step shown
     - name: Build PMTiles
       run: |
         rm -f zoning.pmtiles
-        # one SINGLE physical line, so `-o` is always seen:
         tippecanoe -Z10 -z18 --force \
-          -l zone \                                     # <- <-- important
+          -l zone \
           --drop-densest-as-needed \
           -o zoning.pmtiles zoning4326.geojson
 
