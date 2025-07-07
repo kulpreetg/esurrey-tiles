@@ -19,11 +19,11 @@ jobs:
         sudo apt-get update -y
         sudo apt-get install -y gdal-bin tippecanoe nodejs npm
 
-    # 1 ▸ Fetch zoning polygons in WGS-84 (EPSG 4326)
-    - name: Download zoning GeoJSON (4326)
+    # 1 ▸ Fetch zoning polygons as WGS-84 GeoJSON
+    - name: Download zoning GeoJSON (EPSG 4326)
       run: |
         curl -sSL -o zoning4326.geojson \
-          "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&f=geojson"
+          "https://gisservices.surrey.ca/arcgis/rest/services/OpenData/MapServer/239/query?where=1=1&outFields=*&outSR=4326&f=geojson"
 
     # 2 ▸ Build PMTiles – ONE long line so -o is always read
     - name: Build PMTiles
