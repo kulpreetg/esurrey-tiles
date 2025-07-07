@@ -36,7 +36,7 @@ jobs:
     # 5 ▸ Bake PMTiles (vector) — layer name “zone”
     - name: Build PMTiles
       run: |
-        tippecanoe -zg \
+        tippecanoe -zg --force \        # ← add --force here
           --named-layer="zone:zoning3857.geojson" \
           --drop-densest-as-needed \
           -o zoning.pmtiles \
