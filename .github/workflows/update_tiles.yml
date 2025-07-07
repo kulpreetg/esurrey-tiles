@@ -29,8 +29,8 @@ jobs:
     - name: Build PMTiles
       run: |
         rm -f zoning.pmtiles
-        tippecanoe -Z10 -z18 --force \
-          -l zone \                       # layer is now called “zone”
+        tippecanoe --force -Z10 -z18 \
+          -l zone \
           --drop-densest-as-needed \
           -o zoning.pmtiles zoning4326.geojson
 
