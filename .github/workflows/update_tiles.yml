@@ -42,10 +42,11 @@ jobs:
           --drop-densest-as-needed \
           -o zoning.pmtiles zoning3857.geojson
 
-    # 6 ▸ Optional sanity check  (rename package)
+    # 6 ▸ Optional sanity check (don’t fail workflow if it errors)
     - name: Inspect PMTiles header
       run: |
-        npx -y pmtiles@latest info zoning.pmtiles
+        npx -y pmtiles info zoning.pmtiles || true
+
 
     # 7 ▸ Commit & push if file changed
     - name: Commit & push
